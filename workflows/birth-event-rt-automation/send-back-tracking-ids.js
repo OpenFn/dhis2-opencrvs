@@ -1,35 +1,32 @@
-fn(async state => {
-  const { trackingMap, cursor } = state;
+const BIRTH_EVENT_PROGRAM_STAGE = 'A03MvHHogjR';
+const TRACKING_ID_DATA_ELEMENT = 'uf3svrmp8Oj';
 
-  for (const [teiId, birthCertValue] of Object.entries(trackingMap)) {
-    // Fetch TEI with enrollments and events
-    state = await get(`/tracker/trackedEntities/${teiId}`, {
-      params: { fields: 'enrollments[events[*]]' }
+fn(async state => {
+  for (const [teiId, trackingId] of Object.entries(state.trackingMap)) {
+    state = await get(`tracker/trackedEntities/${teiId}`, {
+      fields: 'enrollments[events[*]]',
     })(state);
 
-    const trackedEntity = state.data;
-    const previousEvent = trackedEntity.enrollments?.[0]?.events?.find(
-      e => e.programStage === 'A03MvHHogjR'
+    const event = state.data.enrollments?.[0]?.events?.find(
+      e => e.programStage === BIRTH_EVENT_PROGRAM_STAGE
     );
-
-    if (!previousEvent) {
-      console.log(`No birth event found for TEI: ${teiId}, skipping.`);
-      continue;
-    }
-
-    const updatedEvent = {
-      ...previousEvent,
-      dataElements: [{ dataElement: 'uf3svrmp8Oj', value: birthCertValue }]
-    };
+    if (!event) continue;
 
     state = await post(
-      '/tracker',
-      { events: [updatedEvent] },
+      'tracker',
+      {
+        events: [
+          {
+            ...event,
+            dataValues: [
+              { dataElement: TRACKING_ID_DATA_ELEMENT, value: trackingId },
+            ],
+          },
+        ],
+      },
       { params: { async: 'false', importStrategy: 'UPDATE' } }
     )(state);
-
-    console.log(`Updated birth certificate for TEI: ${teiId}`);
   }
 
-  return { cursor };
+  return { cursor: state.runStartedAt };
 });

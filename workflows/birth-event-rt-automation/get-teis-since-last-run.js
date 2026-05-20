@@ -1,6 +1,8 @@
 fn(state => {
-  const cursor = state.cursor || new Date().toISOString()
-  return { ...state, cursor }
+  state.runStartedAt = new Date().toISOString();
+  state.cursorIn =
+    state.cursor || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  return state;
 });
 
 get('tracker/trackedEntities', {
@@ -8,5 +10,5 @@ get('tracker/trackedEntities', {
   program: 'IpHINAT79UW',
   fields: ':all',
   paging: false,
-  // updatedAfter: $.cursor
+  updatedAfter: $.cursorIn,
 });
