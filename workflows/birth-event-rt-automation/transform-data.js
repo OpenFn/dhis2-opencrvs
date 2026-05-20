@@ -44,6 +44,6 @@ fn(state => {
   });
 
   // For testing, try a single declaration
-  return { ...state, declarations: declarations.slice(0, 1), trackingMap: {}, trackingPairs: [] };
-  // return { ...state, declarations, trackingMap: {}, trackingPairs: [] };
+  // return { ...state, declarations: declarations.slice(0, 1), trackingMap: {}, trackingPairs: [] };
+  return { ...state, declarations, trackingMap: {}, trackingPairs: [] };
 });

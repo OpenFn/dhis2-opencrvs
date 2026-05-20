@@ -86,7 +86,7 @@ workflows:
             program: 'IpHINAT79UW',
             fields: ':all',
             paging: false,
-            updatedAfter: $.cursor
+            // updatedAfter: $.cursor
           });
         adaptor: '@openfn/language-dhis2@8.0.12'
         openfn:
@@ -100,11 +100,41 @@ workflows:
               uuid: 0db25d9b-93c5-45d9-8052-909172691050
       - id: send-back-tracking-ids
         name: Send back tracking IDs
-        expression: |-
-          // todo?
-          fn(state => {
-            const { trackingMap, cursor } = state
-            return { trackingMap, cursor };
+        expression: >-
+          fn(async state => {
+            const { trackingMap, cursor } = state;
+
+            for (const [teiId, birthCertValue] of Object.entries(trackingMap)) {
+              // Fetch TEI with enrollments and events
+              state = await get(`/tracker/trackedEntities/${teiId}`, {
+                params: { fields: 'enrollments[events[*]]' }
+              })(state);
+
+              const trackedEntity = state.data;
+              const previousEvent = trackedEntity.enrollments?.[0]?.events?.find(
+                e => e.programStage === 'A03MvHHogjR'
+              );
+
+              if (!previousEvent) {
+                console.log(`No birth event found for TEI: ${teiId}, skipping.`);
+                continue;
+              }
+
+              const updatedEvent = {
+                ...previousEvent,
+                dataElements: [{ dataElement: 'uf3svrmp8Oj', value: birthCertValue }]
+              };
+
+              state = await post(
+                '/tracker',
+                { events: [updatedEvent] },
+                { params: { async: 'false', importStrategy: 'UPDATE' } }
+              )(state);
+
+              console.log(`Updated birth certificate for TEI: ${teiId}`);
+            }
+
+            return { cursor };
           });
         adaptor: '@openfn/language-dhis2@8.0.12'
         openfn:
@@ -159,8 +189,8 @@ workflows:
             });
 
             // For testing, try a single declaration
-            return { ...state, declarations: declarations.slice(0, 1), trackingMap: {}, trackingPairs: [] };
-            // return { ...state, declarations, trackingMap: {}, trackingPairs: [] };
+            // return { ...state, declarations: declarations.slice(0, 1), trackingMap: {}, trackingPairs: [] };
+            return { ...state, declarations, trackingMap: {}, trackingPairs: [] };
           });
         adaptor: '@openfn/language-common@3.3.1'
         openfn:
@@ -173,11 +203,11 @@ workflows:
               uuid: 4a6ed5e3-cf81-4b8f-821c-d554b9cf557b
     history:
       - app:6a19e32d8b23
-      - app:c424f94527ba
+      - app:317fc8c37fc1
     openfn:
       uuid: 3c540713-23d1-4f95-910c-81dde8ff4e28
       inserted_at: 2026-05-20T11:29:05Z
-      updated_at: 2026-05-20T12:54:17Z
-      lock_version: 12
+      updated_at: 2026-05-20T17:03:11Z
+      lock_version: 18
     id: birth-event-rt-automation
     start: cron

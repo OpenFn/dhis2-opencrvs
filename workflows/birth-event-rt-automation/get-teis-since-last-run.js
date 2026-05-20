@@ -8,5 +8,5 @@ get('tracker/trackedEntities', {
   program: 'IpHINAT79UW',
   fields: ':all',
   paging: false,
-  updatedAfter: $.cursor
+  // updatedAfter: $.cursor
 });
