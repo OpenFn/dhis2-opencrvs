@@ -10,7 +10,10 @@ fn(async state => {
     const event = state.data.enrollments?.[0]?.events?.find(
       e => e.programStage === BIRTH_EVENT_PROGRAM_STAGE
     );
-    if (!event) continue;
+    if (!event) {
+      console.log(`No birth event found for TEI ${teiId}, skipping.`);
+      continue;
+    }
 
     state = await post(
       'tracker',
@@ -26,6 +29,8 @@ fn(async state => {
       },
       { params: { async: 'false', importStrategy: 'UPDATE' } }
     )(state);
+
+    console.log(`Set tracking ID "${trackingId}" for TEI ${teiId} - status: ${state.data?.status}`);
   }
 
   return { cursor: state.runStartedAt };

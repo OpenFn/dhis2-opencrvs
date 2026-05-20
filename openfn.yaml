@@ -1,13 +1,12 @@
 project:
   uuid: db95a60b-222c-476c-91ae-7d3d32141103
   endpoint: https://app.openfn.org
-  alias: main
   inserted_at: 2026-05-06T10:20:09Z
   updated_at: 2026-05-20T22:03:51Z
   id: oslo-demo
   name: oslo-demo
   forked_from:
-    birth-event-rt-automation: cli:3598f10ef78d
+    birth-event-rt-automation: app:269b802b0609
 workspace:
   credentials: credentials.yaml
   dirs:

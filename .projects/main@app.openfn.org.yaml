@@ -1,9 +1,6 @@
 id: oslo-demo
 name: oslo-demo
 schema_version: '4.0'
-cli:
-  forked_from:
-    birth-event-rt-automation: cli:3598f10ef78d
 description: OpenCRVS, DHIS2, OpenFn workflow demo
 collections: []
 channels: []
@@ -17,7 +14,6 @@ credentials:
 openfn:
   uuid: db95a60b-222c-476c-91ae-7d3d32141103
   endpoint: https://app.openfn.org
-  alias: main
   inserted_at: 2026-05-06T10:20:09Z
   updated_at: 2026-05-20T22:03:51Z
 options:
@@ -112,7 +108,10 @@ workflows:
               const event = state.data.enrollments?.[0]?.events?.find(
                 e => e.programStage === BIRTH_EVENT_PROGRAM_STAGE
               );
-              if (!event) continue;
+              if (!event) {
+                console.log(`No birth event found for TEI ${teiId}, skipping.`);
+                continue;
+              }
 
               state = await post(
                 'tracker',
@@ -128,6 +127,8 @@ workflows:
                 },
                 { params: { async: 'false', importStrategy: 'UPDATE' } }
               )(state);
+
+              console.log(`Set tracking ID "${trackingId}" for TEI ${teiId} - status: ${state.data?.status}`);
             }
 
             return { cursor: state.runStartedAt };
@@ -196,10 +197,11 @@ workflows:
       - app:6a19e32d8b23
       - app:317fc8c37fc1
       - cli:3598f10ef78d
+      - app:269b802b0609
     openfn:
       uuid: 3c540713-23d1-4f95-910c-81dde8ff4e28
       inserted_at: 2026-05-20T11:29:05Z
-      updated_at: 2026-05-20T22:03:51Z
-      lock_version: 19
+      updated_at: 2026-05-20T22:13:29Z
+      lock_version: 20
     id: birth-event-rt-automation
     start: cron
