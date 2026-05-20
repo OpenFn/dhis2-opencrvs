@@ -1,0 +1,183 @@
+id: oslo-demo
+name: oslo-demo
+schema_version: '4.0'
+description: OpenCRVS, DHIS2, OpenFn workflow demo
+collections: []
+channels: []
+credentials:
+  - uuid: c7924e59-d15e-4e87-b9a1-10e3050f8032
+    name: DHIS2 Demo for BDR
+    owner: taylor@openfn.org
+  - uuid: a2cb7102-869b-40b4-bab3-df842537d7e6
+    name: OpenCRVS Demo 2026-05
+    owner: taylor@openfn.org
+openfn:
+  uuid: db95a60b-222c-476c-91ae-7d3d32141103
+  endpoint: https://app.openfn.org
+  inserted_at: 2026-05-06T10:20:09Z
+  updated_at: 2026-05-20T12:55:54Z
+options:
+  env: main
+  history_retention_period: 365
+  dataclip_retention_period: 365
+  retention_policy: retain_all
+  allow_support_access: false
+  requires_mfa: false
+workflows:
+  - name: Birth Event RT Automation
+    steps:
+      - id: create-birth-notifications
+        name: Create birth notifications
+        expression: >-
+          const OFFICE_ID = 'b9354086-d762-415d-9b8b-f004e2ff131e'; // Ibombo
+          District Office
+
+
+          // Submit one notification per TEI. Each call is sequential
+          (createEvent + notify).
+
+          // After each call, capture { teiId, trackingId } so we can later push
+          the
+
+          // trackingId back to the DHIS2 TEI.
+
+          each($.declarations, async state => {
+            const { teiId, payload } = state.data;
+            const next = await submitBirthNotification(payload, {
+              createdAtLocation: OFFICE_ID,
+            })(state);
+            const trackingId = next.data?.trackingId;
+            next.trackingMap[teiId] = trackingId;
+            next.trackingPairs.push({ teiId, trackingId });
+            return next;
+          });
+        adaptor: '@openfn/language-opencrvs@1.1.1'
+        openfn:
+          uuid: f9c0227a-203a-4117-80ec-58c22c107a87
+        configuration: taylor@openfn.org|OpenCRVS Demo 2026-05
+        next:
+          send-back-tracking-ids:
+            disabled: false
+            condition: on_job_success
+            openfn:
+              uuid: 6d3c0ccb-7209-4b65-8791-db2a68ec0bc9
+      - id: cron
+        type: cron
+        enabled: true
+        cron_expression: '*/5 * * * *'
+        openfn:
+          uuid: 40246ff6-3e8a-4074-8cd6-1254b0d001c9
+        next:
+          get-teis-since-last-run:
+            disabled: false
+            condition: always
+            openfn:
+              uuid: ff3c2af1-b0ad-48b9-8960-2a82433cb9ae
+      - id: get-teis-since-last-run
+        name: Get TEIs since last run
+        expression: |-
+          fn(state => {
+            const cursor = state.cursor || new Date().toISOString()
+            return { ...state, cursor }
+          });
+
+          get('tracker/trackedEntities', {
+            orgUnits: 'DiszpKrYNg8',
+            program: 'IpHINAT79UW',
+            fields: ':all',
+            paging: false,
+            updatedAfter: $.cursor
+          });
+        adaptor: '@openfn/language-dhis2@8.0.12'
+        openfn:
+          uuid: bdfc9bd0-e854-491f-8c20-7aeab1d44446
+        configuration: taylor@openfn.org|DHIS2 Demo for BDR
+        next:
+          transform-data:
+            disabled: false
+            condition: on_job_success
+            openfn:
+              uuid: 0db25d9b-93c5-45d9-8052-909172691050
+      - id: send-back-tracking-ids
+        name: Send back tracking IDs
+        expression: |-
+          // todo?
+          fn(state => {
+            const { trackingMap, cursor } = state
+            return { trackingMap, cursor };
+          });
+        adaptor: '@openfn/language-dhis2@8.0.12'
+        openfn:
+          uuid: 1c120f14-654a-4590-8029-31e210dd1169
+        configuration: taylor@openfn.org|DHIS2 Demo for BDR
+      - id: transform-data
+        name: Transform data
+        expression: |-
+          // Maps DHIS2 tracked entities (state.teiArray) -> OpenCRVS v2 birth notifications.
+          // Reference: https://github.com/opencrvs/event-notification-integration/blob/main/src/submit-test-notification.ts
+          //
+          // Demo simplifications (per OpenCRVS team):
+          // - Hardcoded office + hospital IDs from the Farajaland seed; stable through demo.
+          // - placeOfBirth fixed to HEALTH_FACILITY (PRIVATE_HOME/OTHER need full address integration).
+          // - informant.relation fixed to MOTHER (FATHER/GRANDFATHER variants require extra props).
+          // - informant.email hardcoded — DHIS2 program doesn't capture an email for this entity.
+
+          // Rather thank using...
+          // getLocations();
+          // and mapping to dhis2 clinics, we simply hardcode...
+
+          const HOSPITAL_ID = 'c36a0dad-c790-4824-aa62-6186deea5a4b'; // Ibombo District Hospital
+
+          fn(state => {
+            const attr = (attributes, displayName) =>
+              attributes?.find(a => a.displayName === displayName)?.value;
+
+            const declarations = state.data.trackedEntities.map(tei => {
+              const childAttrs = tei.attributes;
+              const motherAttrs = tei.relationships?.[0]?.to?.trackedEntity?.attributes;
+
+              return {
+                teiId: tei.trackedEntity,
+                payload: {
+                  'child.name': {
+                    firstname: attr(childAttrs, 'First name'),
+                    surname: attr(childAttrs, 'Last name'),
+                  },
+                  'child.gender': (attr(childAttrs, 'Gender') || '').toLowerCase(),
+                  'child.dob': tei.enrollments?.[0]?.occurredAt?.slice(0, 10),
+                  'child.placeOfBirth': 'HEALTH_FACILITY',
+                  'child.birthLocation': HOSPITAL_ID,
+                  'informant.relation': 'MOTHER',
+                  'informant.email': 'test.informant@example.com',
+                  'mother.detailsNotAvailable': false,
+                  'mother.name': {
+                    firstname: attr(motherAttrs, 'First name'),
+                    surname: attr(motherAttrs, 'Last name'),
+                  },
+                },
+              };
+            });
+
+            // For testing, try a single declaration
+            return { ...state, declarations: declarations.slice(0, 1), trackingMap: {}, trackingPairs: [] };
+            // return { ...state, declarations, trackingMap: {}, trackingPairs: [] };
+          });
+        adaptor: '@openfn/language-common@3.3.1'
+        openfn:
+          uuid: 63226951-2259-499f-807f-4ca07db9287b
+        next:
+          create-birth-notifications:
+            disabled: false
+            condition: on_job_success
+            openfn:
+              uuid: 4a6ed5e3-cf81-4b8f-821c-d554b9cf557b
+    history:
+      - app:6a19e32d8b23
+      - app:c424f94527ba
+    openfn:
+      uuid: 3c540713-23d1-4f95-910c-81dde8ff4e28
+      inserted_at: 2026-05-20T11:29:05Z
+      updated_at: 2026-05-20T12:54:17Z
+      lock_version: 12
+    id: birth-event-rt-automation
+    start: cron
