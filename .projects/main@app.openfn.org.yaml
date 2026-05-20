@@ -1,6 +1,9 @@
 id: oslo-demo
 name: oslo-demo
 schema_version: '4.0'
+cli:
+  forked_from:
+    birth-event-rt-automation: cli:3598f10ef78d
 description: OpenCRVS, DHIS2, OpenFn workflow demo
 collections: []
 channels: []
@@ -14,8 +17,9 @@ credentials:
 openfn:
   uuid: db95a60b-222c-476c-91ae-7d3d32141103
   endpoint: https://app.openfn.org
+  alias: main
   inserted_at: 2026-05-06T10:20:09Z
-  updated_at: 2026-05-20T12:55:54Z
+  updated_at: 2026-05-20T22:03:51Z
 options:
   env: main
   history_retention_period: 365
@@ -28,27 +32,17 @@ workflows:
     steps:
       - id: create-birth-notifications
         name: Create birth notifications
-        expression: >-
+        expression: >
           const OFFICE_ID = 'b9354086-d762-415d-9b8b-f004e2ff131e'; // Ibombo
           District Office
 
-
-          // Submit one notification per TEI. Each call is sequential
-          (createEvent + notify).
-
-          // After each call, capture { teiId, trackingId } so we can later push
-          the
-
-          // trackingId back to the DHIS2 TEI.
 
           each($.declarations, async state => {
             const { teiId, payload } = state.data;
             const next = await submitBirthNotification(payload, {
               createdAtLocation: OFFICE_ID,
             })(state);
-            const trackingId = next.data?.trackingId;
-            next.trackingMap[teiId] = trackingId;
-            next.trackingPairs.push({ teiId, trackingId });
+            next.trackingMap[teiId] = next.data?.trackingId;
             return next;
           });
         adaptor: '@openfn/language-opencrvs@1.1.1'
@@ -75,18 +69,21 @@ workflows:
               uuid: ff3c2af1-b0ad-48b9-8960-2a82433cb9ae
       - id: get-teis-since-last-run
         name: Get TEIs since last run
-        expression: |-
+        expression: >
           fn(state => {
-            const cursor = state.cursor || new Date().toISOString()
-            return { ...state, cursor }
+            state.runStartedAt = new Date().toISOString();
+            state.cursorIn =
+              state.cursor || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+            return state;
           });
+
 
           get('tracker/trackedEntities', {
             orgUnits: 'DiszpKrYNg8',
             program: 'IpHINAT79UW',
             fields: ':all',
             paging: false,
-            // updatedAfter: $.cursor
+            updatedAfter: $.cursorIn,
           });
         adaptor: '@openfn/language-dhis2@8.0.12'
         openfn:
@@ -100,41 +97,40 @@ workflows:
               uuid: 0db25d9b-93c5-45d9-8052-909172691050
       - id: send-back-tracking-ids
         name: Send back tracking IDs
-        expression: >-
-          fn(async state => {
-            const { trackingMap, cursor } = state;
+        expression: >
+          const BIRTH_EVENT_PROGRAM_STAGE = 'A03MvHHogjR';
 
-            for (const [teiId, birthCertValue] of Object.entries(trackingMap)) {
-              // Fetch TEI with enrollments and events
-              state = await get(`/tracker/trackedEntities/${teiId}`, {
-                params: { fields: 'enrollments[events[*]]' }
+          const TRACKING_ID_DATA_ELEMENT = 'uf3svrmp8Oj';
+
+
+          fn(async state => {
+            for (const [teiId, trackingId] of Object.entries(state.trackingMap)) {
+              state = await get(`tracker/trackedEntities/${teiId}`, {
+                fields: 'enrollments[events[*]]',
               })(state);
 
-              const trackedEntity = state.data;
-              const previousEvent = trackedEntity.enrollments?.[0]?.events?.find(
-                e => e.programStage === 'A03MvHHogjR'
+              const event = state.data.enrollments?.[0]?.events?.find(
+                e => e.programStage === BIRTH_EVENT_PROGRAM_STAGE
               );
-
-              if (!previousEvent) {
-                console.log(`No birth event found for TEI: ${teiId}, skipping.`);
-                continue;
-              }
-
-              const updatedEvent = {
-                ...previousEvent,
-                dataElements: [{ dataElement: 'uf3svrmp8Oj', value: birthCertValue }]
-              };
+              if (!event) continue;
 
               state = await post(
-                '/tracker',
-                { events: [updatedEvent] },
+                'tracker',
+                {
+                  events: [
+                    {
+                      ...event,
+                      dataValues: [
+                        { dataElement: TRACKING_ID_DATA_ELEMENT, value: trackingId },
+                      ],
+                    },
+                  ],
+                },
                 { params: { async: 'false', importStrategy: 'UPDATE' } }
               )(state);
-
-              console.log(`Updated birth certificate for TEI: ${teiId}`);
             }
 
-            return { cursor };
+            return { cursor: state.runStartedAt };
           });
         adaptor: '@openfn/language-dhis2@8.0.12'
         openfn:
@@ -142,25 +138,22 @@ workflows:
         configuration: taylor@openfn.org|DHIS2 Demo for BDR
       - id: transform-data
         name: Transform data
-        expression: |-
-          // Maps DHIS2 tracked entities (state.teiArray) -> OpenCRVS v2 birth notifications.
-          // Reference: https://github.com/opencrvs/event-notification-integration/blob/main/src/submit-test-notification.ts
-          //
-          // Demo simplifications (per OpenCRVS team):
-          // - Hardcoded office + hospital IDs from the Farajaland seed; stable through demo.
-          // - placeOfBirth fixed to HEALTH_FACILITY (PRIVATE_HOME/OTHER need full address integration).
-          // - informant.relation fixed to MOTHER (FATHER/GRANDFATHER variants require extra props).
-          // - informant.email hardcoded — DHIS2 program doesn't capture an email for this entity.
+        expression: >
+          // Maps DHIS2 tracked entities -> OpenCRVS v2 birth notifications.
 
-          // Rather thank using...
-          // getLocations();
-          // and mapping to dhis2 clinics, we simply hardcode...
+          // Demo simplifications: hardcoded hospital + informant, MOTHER
+          relationship,
 
-          const HOSPITAL_ID = 'c36a0dad-c790-4824-aa62-6186deea5a4b'; // Ibombo District Hospital
+          // placeOfBirth fixed to HEALTH_FACILITY.
+
+
+          const HOSPITAL_ID = 'c36a0dad-c790-4824-aa62-6186deea5a4b'; // Ibombo
+          District Hospital
+
 
           fn(state => {
-            const attr = (attributes, displayName) =>
-              attributes?.find(a => a.displayName === displayName)?.value;
+            const attr = (attrs, displayName) =>
+              attrs?.find(a => a.displayName === displayName)?.value;
 
             const declarations = state.data.trackedEntities.map(tei => {
               const childAttrs = tei.attributes;
@@ -188,9 +181,7 @@ workflows:
               };
             });
 
-            // For testing, try a single declaration
-            // return { ...state, declarations: declarations.slice(0, 1), trackingMap: {}, trackingPairs: [] };
-            return { ...state, declarations, trackingMap: {}, trackingPairs: [] };
+            return { ...state, declarations, trackingMap: {} };
           });
         adaptor: '@openfn/language-common@3.3.1'
         openfn:
@@ -204,10 +195,11 @@ workflows:
     history:
       - app:6a19e32d8b23
       - app:317fc8c37fc1
+      - cli:3598f10ef78d
     openfn:
       uuid: 3c540713-23d1-4f95-910c-81dde8ff4e28
       inserted_at: 2026-05-20T11:29:05Z
-      updated_at: 2026-05-20T17:03:11Z
-      lock_version: 18
+      updated_at: 2026-05-20T22:03:51Z
+      lock_version: 19
     id: birth-event-rt-automation
     start: cron
