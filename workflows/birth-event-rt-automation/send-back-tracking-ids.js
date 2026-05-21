@@ -15,7 +15,7 @@ fn(async state => {
       continue;
     }
 
-    state = await post(
+    state = await http.post(
       'tracker',
       {
         events: [

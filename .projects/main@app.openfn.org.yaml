@@ -53,7 +53,7 @@ workflows:
               uuid: 6d3c0ccb-7209-4b65-8791-db2a68ec0bc9
       - id: cron
         type: cron
-        enabled: true
+        enabled: false
         cron_expression: '*/5 * * * *'
         openfn:
           uuid: 40246ff6-3e8a-4074-8cd6-1254b0d001c9
@@ -113,7 +113,7 @@ workflows:
                 continue;
               }
 
-              state = await post(
+              state = await http.post(
                 'tracker',
                 {
                   events: [
@@ -197,11 +197,104 @@ workflows:
       - app:6a19e32d8b23
       - app:317fc8c37fc1
       - cli:3598f10ef78d
-      - app:269b802b0609
+      - app:1af5f95daa50
     openfn:
       uuid: 3c540713-23d1-4f95-910c-81dde8ff4e28
       inserted_at: 2026-05-20T11:29:05Z
-      updated_at: 2026-05-20T22:13:29Z
-      lock_version: 20
+      updated_at: 2026-05-21T09:24:55Z
+      lock_version: 22
     id: birth-event-rt-automation
+    start: cron
+  - name: Single shot test
+    steps:
+      - id: create-birth-notifications-in-opencrvs
+        name: Create Birth Notifications in OpenCRVS
+        expression: >-
+          const OFFICE_ID = "b9354086-d762-415d-9b8b-f004e2ff131e";
+
+
+          each(
+            "$.declarations[*]",
+            submitBirthNotification(state => state.data, { createdAtLocation: OFFICE_ID })
+          );
+        adaptor: '@openfn/language-opencrvs@latest'
+        openfn:
+          uuid: f79b42bd-e36f-47c0-8c91-81aa263ab7a7
+        configuration: taylor@openfn.org|OpenCRVS Demo 2026-05
+      - id: cron
+        type: cron
+        enabled: false
+        cron_expression: 0 0 * * *
+        openfn:
+          uuid: d6091f3c-7b51-422e-9d1b-4c6eb0b778fe
+        next:
+          fetch-teis-from-dhis2:
+            disabled: false
+            condition: always
+            openfn:
+              uuid: 52062e62-9951-45a7-af93-304ffba1b520
+      - id: fetch-teis-from-dhis2
+        name: Fetch TEIs from DHIS2
+        expression: >-
+          get('tracker/trackedEntities', {
+            orgUnit: 'DiszpKrYNg8',
+            program: 'IpHINAT79UW',
+            fields: ':all',
+            paging: false,
+            updatedAfter: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+          });
+        adaptor: '@openfn/language-dhis2@latest'
+        openfn:
+          uuid: 4b1a2a06-eee4-48cf-80ea-f23123ac918f
+        configuration: taylor@openfn.org|DHIS2 Demo for BDR
+        next:
+          transform-teis-to-opencrvs-payloads:
+            disabled: false
+            condition: on_job_success
+            openfn:
+              uuid: d41c45fd-961d-4934-aaf9-a427853033c8
+      - id: transform-teis-to-opencrvs-payloads
+        name: Transform TEIs to OpenCRVS Payloads
+        expression: >-
+          fn(state => {
+            const HOSPITAL_ID = "c36a0dad-c790-4824-aa62-6186deea5a4b";
+            const attr = (attrs, displayName) => attrs.find(a => a.displayName === displayName)?.value;
+
+            const declarations = state.data.trackedEntities.map(tei => {
+              const childAttrs = tei.attributes || [];
+              const motherAttrs = tei.relationships?.[0]?.to?.trackedEntity?.attributes || [];
+
+              return {
+                'child.name': { firstname: attr(childAttrs, 'First name'), surname: attr(childAttrs, 'Last name') },
+                'child.gender': attr(childAttrs, 'Gender')?.toLowerCase(),
+                'child.dob': tei.enrollments?.[0]?.occurredAt?.slice(0, 10),
+                'child.placeOfBirth': "HEALTH_FACILITY",
+                'child.birthLocation': HOSPITAL_ID,
+                'informant.relation': "MOTHER",
+                'informant.email': "test.informant@example.com",
+                'mother.detailsNotAvailable': false,
+                'mother.name': { firstname: attr(motherAttrs, 'First name'), surname: attr(motherAttrs, 'Last name') },
+              };
+            });
+
+            return { ...state, declarations };
+          });
+        adaptor: '@openfn/language-common@latest'
+        openfn:
+          uuid: 5807b92f-3a41-4803-8ba0-f2b91214ecb8
+        next:
+          create-birth-notifications-in-opencrvs:
+            disabled: false
+            condition: on_job_success
+            openfn:
+              uuid: 90e705be-1128-45b8-9a7c-3efd62bcb0a4
+    history:
+      - app:ae13498f2f9f
+      - app:44971e8724cc
+    openfn:
+      uuid: b32affa1-b81c-4bc2-a9f2-3bc00a0628b0
+      inserted_at: 2026-05-21T09:07:06Z
+      updated_at: 2026-05-21T09:26:32Z
+      lock_version: 6
+    id: single-shot-test
     start: cron

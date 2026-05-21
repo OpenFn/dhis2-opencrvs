@@ -6,7 +6,8 @@ project:
   id: oslo-demo
   name: oslo-demo
   forked_from:
-    birth-event-rt-automation: app:269b802b0609
+    birth-event-rt-automation: app:1af5f95daa50
+    single-shot-test: app:44971e8724cc
 workspace:
   credentials: credentials.yaml
   dirs:

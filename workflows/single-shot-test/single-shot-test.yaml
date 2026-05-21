@@ -1,0 +1,34 @@
+id: single-shot-test
+name: Single shot test
+start: cron
+steps:
+  - id: create-birth-notifications-in-opencrvs
+    name: Create Birth Notifications in OpenCRVS
+    adaptor: '@openfn/language-opencrvs@latest'
+    configuration: taylor@openfn.org|OpenCRVS Demo 2026-05
+    expression: ./create-birth-notifications-in-opencrvs.js
+  - id: cron
+    type: cron
+    enabled: false
+    cron_expression: 0 0 * * *
+    next:
+      fetch-teis-from-dhis2:
+        disabled: false
+        condition: always
+  - id: fetch-teis-from-dhis2
+    name: Fetch TEIs from DHIS2
+    adaptor: '@openfn/language-dhis2@latest'
+    configuration: taylor@openfn.org|DHIS2 Demo for BDR
+    expression: ./fetch-teis-from-dhis2.js
+    next:
+      transform-teis-to-opencrvs-payloads:
+        disabled: false
+        condition: on_job_success
+  - id: transform-teis-to-opencrvs-payloads
+    name: Transform TEIs to OpenCRVS Payloads
+    adaptor: '@openfn/language-common@latest'
+    expression: ./transform-teis-to-opencrvs-payloads.js
+    next:
+      create-birth-notifications-in-opencrvs:
+        disabled: false
+        condition: on_job_success
