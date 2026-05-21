@@ -1,6 +1,10 @@
 id: oslo-demo
 name: oslo-demo
 schema_version: '4.0'
+cli:
+  forked_from:
+    birth-event-rt-automation: cli:84902d216649
+    single-shot-test: app:44971e8724cc
 description: OpenCRVS, DHIS2, OpenFn workflow demo
 collections: []
 channels: []
@@ -14,8 +18,9 @@ credentials:
 openfn:
   uuid: db95a60b-222c-476c-91ae-7d3d32141103
   endpoint: https://app.openfn.org
+  alias: main
   inserted_at: 2026-05-06T10:20:09Z
-  updated_at: 2026-05-20T22:03:51Z
+  updated_at: 2026-05-21T10:15:43Z
 options:
   env: main
   history_retention_period: 365
@@ -151,12 +156,25 @@ workflows:
           const HOSPITAL_ID = 'c36a0dad-c790-4824-aa62-6186deea5a4b'; // Ibombo
           District Hospital
 
+          const BIRTH_EVENT_PROGRAM_STAGE = 'A03MvHHogjR';
+
+          const TRACKING_ID_DATA_ELEMENT = 'uf3svrmp8Oj';
+
 
           fn(state => {
             const attr = (attrs, displayName) =>
               attrs?.find(a => a.displayName === displayName)?.value;
 
-            const declarations = state.data.trackedEntities.map(tei => {
+            const hasTrackingId = tei =>
+              tei.enrollments?.[0]?.events
+                ?.find(e => e.programStage === BIRTH_EVENT_PROGRAM_STAGE)
+                ?.dataValues?.some(
+                  dv => dv.dataElement === TRACKING_ID_DATA_ELEMENT && dv.value
+                );
+
+            const declarations = state.data.trackedEntities
+              .filter(tei => !hasTrackingId(tei))
+              .map(tei => {
               const childAttrs = tei.attributes;
               const motherAttrs = tei.relationships?.[0]?.to?.trackedEntity?.attributes;
 
@@ -197,12 +215,13 @@ workflows:
       - app:6a19e32d8b23
       - app:317fc8c37fc1
       - cli:3598f10ef78d
-      - app:1af5f95daa50
+      - app:b6d11ce1fe7e
+      - cli:84902d216649
     openfn:
       uuid: 3c540713-23d1-4f95-910c-81dde8ff4e28
       inserted_at: 2026-05-20T11:29:05Z
-      updated_at: 2026-05-21T09:24:55Z
-      lock_version: 22
+      updated_at: 2026-05-21T10:15:43Z
+      lock_version: 25
     id: birth-event-rt-automation
     start: cron
   - name: Single shot test
