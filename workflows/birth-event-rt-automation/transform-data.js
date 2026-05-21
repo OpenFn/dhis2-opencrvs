@@ -3,12 +3,23 @@
 // placeOfBirth fixed to HEALTH_FACILITY.
 
 const HOSPITAL_ID = 'c36a0dad-c790-4824-aa62-6186deea5a4b'; // Ibombo District Hospital
+const BIRTH_EVENT_PROGRAM_STAGE = 'A03MvHHogjR';
+const TRACKING_ID_DATA_ELEMENT = 'uf3svrmp8Oj';
 
 fn(state => {
   const attr = (attrs, displayName) =>
     attrs?.find(a => a.displayName === displayName)?.value;
 
-  const declarations = state.data.trackedEntities.map(tei => {
+  const hasTrackingId = tei =>
+    tei.enrollments?.[0]?.events
+      ?.find(e => e.programStage === BIRTH_EVENT_PROGRAM_STAGE)
+      ?.dataValues?.some(
+        dv => dv.dataElement === TRACKING_ID_DATA_ELEMENT && dv.value
+      );
+
+  const declarations = state.data.trackedEntities
+    .filter(tei => !hasTrackingId(tei))
+    .map(tei => {
     const childAttrs = tei.attributes;
     const motherAttrs = tei.relationships?.[0]?.to?.trackedEntity?.attributes;
 
